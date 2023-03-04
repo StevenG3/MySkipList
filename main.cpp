@@ -1,10 +1,49 @@
 #include <iostream>
+#include <unistd.h>
 #include "skiplist.h"
+#include "timer.h"
+#include "signal.h"
 #define FILE_PATH "./store/dump_file"
 
-int main() {
+Signal signaler;
+
+void SignalHandler(int signal) {
+  int save_errno = errno;
+  int msg = signal;
+  send(signaler.pipe_fd_[1], (char *)&msg, 1, 0);
+  errno = save_errno;
+}
+
+void AddSignal(int signal) {
+  struct sigaction sa;
+  memset(&sa, '\0', sizeof(sa));
+  sa.sa_handler = signalHandler;
+  sa.sa_flags |= SA_RESTART;
+  sigfillset(&sa.sa_mask);
+  assert(sigaction(signal, &sa, nullptr) != -1);
+}
+
+void TimeoutHandler()
+{
+  alarm(signaler.timeout_);
+}
+
+int main(int argc, char* argv[]) {
+
+
 	srand ((unsigned int)(time(NULL)));
-	SkipList skip_list(6);
+
+	SkipList<std::string, int> skip_list(6);
+	Timer<std::string, int> timer;
+
+	AddSignal(SIGALRM);
+	AddSignal(SIGTERM);
+	TimeoutHandler();
+
+	while(1) {
+		printf("[Redis]$ ");
+	}
+
 	skip_list.InsertElement("Steven", 1);
 	skip_list.InsertElement("Jobs", 3);
 	skip_list.InsertElement("Justin", 7);

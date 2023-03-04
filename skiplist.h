@@ -14,21 +14,14 @@
 #define SKIPLIST_MAXLEVEL 32
 #define STORE_FILE "store/dump_file"
 
-#define __output(...) \
-	printf(__VA_ARGS__);
-
-#define __format(__fmt__) "%s(%d)-<%s>: " __fmt__ "\n"
-
-#define TRACE_CMH(__fmt__, ...) \
-	__output(__format(__fmt__), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);
-
 std::mutex mtx;
 std::string delimiter = ":";
 
+template<typename K, typename V> 
 class SkipListNode {
 public:
 	SkipListNode() {}
-	SkipListNode(std::string ele, double socre, int level);
+	SkipListNode(K ele, V score, int level);
 	~SkipListNode();
 
 	int level_;
@@ -37,11 +30,12 @@ public:
 	SkipListNode** forward_;
 	unsigned int* span_;
 
-	std::string ele_; // Key
-	double score_; // Value
+	K ele_; // Key
+	V score_; // Value
 };
 
-SkipListNode::SkipListNode(std::string ele, double score, int level) {
+template<typename K, typename V>
+SkipListNode<K, V>::SkipListNode(K ele, V score, int level) {
 	this->ele_      = ele;
 	this->score_    = score;
 	this->backward_ = NULL;
@@ -53,25 +47,27 @@ SkipListNode::SkipListNode(std::string ele, double score, int level) {
 	memset(this->span_, 0, sizeof(unsigned int) * level);
 }
 
-SkipListNode::~SkipListNode() {
+template<typename K, typename V>
+SkipListNode<K, V>::~SkipListNode() {
 	delete []forward_;
 	delete []span_;
 }
 
+template<typename K, typename V>
 class SkipList {
 public:
 	SkipList(int max_level);
 	~SkipList();
-	int InsertElement(std::string ele, double score);
-	void DeleteElement(std::string ele, double score);
-	bool SearchElement(std::string ele, double score);
+	int InsertElement(K ele, V score);
+	void DeleteElement(K ele, V score);
+	bool SearchElement(K ele, V score);
 	void DisplayList();
 	void DumpFile();
 	void LoadFile();
 	int Length();
 private:
 	// 表头节点和表尾节点
-	SkipListNode* header_, * tail_;
+	SkipListNode<K, V>* header_, * tail_;
 	// 表中节点的数量
 	unsigned int length_;
 	// 表中层数最大的节点的层数
@@ -90,14 +86,15 @@ private:
 };
 
 /* 构造函数 */
-SkipList::SkipList(int max_level) {
+template<typename K, typename V>
+SkipList<K, V>::SkipList(int max_level) {
 	max_level_ = max_level;
 	level_ = 0;
 	length_ = 0;
 
 	std::string ele;
 	double score;
-	header_ = new SkipListNode(ele, score, max_level);
+	header_ = new SkipListNode<K, V>(ele, score, max_level);
 	header_->backward_ = NULL;
 	for(int i = 0; i < max_level; ++i){
 		header_->forward_[i] = NULL;
@@ -106,7 +103,8 @@ SkipList::SkipList(int max_level) {
 	tail_ = NULL;
 }
 
-SkipList::~SkipList() {
+template<typename K, typename V>
+SkipList<K, V>::~SkipList() {
 	if (file_writer_.is_open()) {
         file_writer_.close();
     }
@@ -116,7 +114,7 @@ SkipList::~SkipList() {
 
     // 清理仍然处于跳表中的节点
 	while(tail_ != NULL) {
-		SkipListNode* curr = tail_;
+		SkipListNode<K, V>* curr = tail_;
 		tail_ = tail_->backward_;
 		delete curr;
 	}
@@ -124,16 +122,17 @@ SkipList::~SkipList() {
     delete header_;
 }
 
-int SkipList::InsertElement(std::string ele, double score) {
+template<typename K, typename V>
+int SkipList<K, V>::InsertElement(K ele, V score) {
 	mtx.lock();
 	// update用于记录待插入位置的前一个节点
-	SkipListNode* update[max_level_];
-	memset(update, 0, sizeof(SkipListNode*) * max_level_);
+	SkipListNode<K, V>* update[max_level_];
+	memset(update, 0, sizeof(SkipListNode<K, V>*) * max_level_);
 	// rank用于记录从header节点到update[i]节点所经历的步长
 	unsigned int rank[max_level_];
 	memset(rank, 0, sizeof(unsigned int) * max_level_);
 
-	SkipListNode* curr = header_, * next;
+	SkipListNode<K, V>* curr = header_, * next;
 	// 当前最大深度level_和新创建节点的最大深度level的较大值cur_level，如果当前最大深度大，表示从level_开始寻找；如果新创建节点的最大深度大，表示从level开始创建节点
 	int cur_level = max_level_;
 	
@@ -160,7 +159,7 @@ int SkipList::InsertElement(std::string ele, double score) {
 
 	// 新创建节点的最大深度level
 	int level = GetRandomLevel();
-	SkipListNode* node = new SkipListNode(ele, score, level);
+	SkipListNode<K, V>* node = new SkipListNode<K, V>(ele, score, level);
 	// TRACE_CMH("node: [%p], ele: [%s], score: [%lf], level: [%d]\n", node, ele.c_str(), score, level);
 	node->ele_   = ele;
 	node->score_ = score;
@@ -192,12 +191,13 @@ int SkipList::InsertElement(std::string ele, double score) {
 	return 0;
 }
 
-void SkipList::DeleteElement(std::string ele, double score) {
+template<typename K, typename V>
+void SkipList<K, V>::DeleteElement(K ele, V score) {
 	mtx.lock();
-	SkipListNode* curr = header_, * node;
+	SkipListNode<K, V>* curr = header_, * node;
 	int cur_level = level_, level = max_level_;
-	SkipListNode* update[max_level_];
-	memset(update, 0, sizeof(SkipListNode*) * max_level_);
+	SkipListNode<K, V>* update[max_level_];
+	memset(update, 0, sizeof(SkipListNode<K, V>*) * max_level_);
 	while(--cur_level >= 0) {
 		while(curr->forward_[cur_level] != NULL 
 			&& (curr->forward_[cur_level]->score_ < score || score == curr->forward_[cur_level]->score_ && curr->forward_[cur_level]->ele_ < ele))
@@ -242,8 +242,9 @@ void SkipList::DeleteElement(std::string ele, double score) {
 	mtx.unlock();
 }
 
-bool SkipList::SearchElement(std::string ele, double score) { 
-	SkipListNode* curr = header_, * node;
+template<typename K, typename V>
+bool SkipList<K, V>::SearchElement(K ele, V score) { 
+	SkipListNode<K, V>* curr = header_, * node;
 	int cur_level = level_;
 	while(--cur_level >= 0) {
 		while(curr->forward_[cur_level] != NULL 
@@ -261,10 +262,11 @@ bool SkipList::SearchElement(std::string ele, double score) {
 	return false;
 }
 
-void SkipList::DisplayList() {
+template<typename K, typename V>
+void SkipList<K, V>::DisplayList() {
 	std::cout << "\n************************* Skip List *************************" << std::endl;
     for (int i = 0; i < max_level_; i++) {
-        SkipListNode *node = header_->forward_[i]; 
+        SkipListNode<K, V> *node = header_->forward_[i]; 
         std::cout << "Level " << i << ": ";
         while (node != NULL) {
             std::cout << node->ele_ << ":" << node->score_ << ";";
@@ -275,10 +277,11 @@ void SkipList::DisplayList() {
 	std::cout << std::endl;
 }
 
-void SkipList::DumpFile() {
+template<typename K, typename V>
+void SkipList<K, V>::DumpFile() {
     std::cout << "\n************************* Dump File *************************" << std::endl;
     file_writer_.open(STORE_FILE);
-    SkipListNode *node = header_->forward_[0];
+    SkipListNode<K, V>* node = header_->forward_[0];
 
     while (node != NULL) {
         file_writer_ << node->ele_ << ":" << node->score_ << "\n";
@@ -291,7 +294,8 @@ void SkipList::DumpFile() {
     file_writer_.close();
 }
 
-void SkipList::LoadFile() {
+template<typename K, typename V>
+void SkipList<K, V>::LoadFile() {
     file_reader_.open(STORE_FILE);
     std::cout << "\n************************* Load File *************************" << std::endl;
     std::string line;
@@ -303,8 +307,9 @@ void SkipList::LoadFile() {
             continue;
         }
 		
-		double value;
+		V value;
 		try {
+			// 泛型编程中需要修改
 			value = std::stod(*val);
 		}
 		catch(const std::exception& e) {
@@ -321,7 +326,8 @@ void SkipList::LoadFile() {
 	delete val;
 }
 
-bool SkipList::IsValidString(const std::string& str) {
+template<typename K, typename V>
+bool SkipList<K, V>::IsValidString(const std::string& str) {
     if (str.empty()) {
         return false;
     }
@@ -331,7 +337,8 @@ bool SkipList::IsValidString(const std::string& str) {
     return true;
 }
 
-void SkipList::GetObjectFromString(const std::string& str, std::string* key, std::string* value) {
+template<typename K, typename V>
+void SkipList<K, V>::GetObjectFromString(const std::string& str, std::string* key, std::string* value) {
     if(!IsValidString(str)) {
         return;
     }
@@ -340,13 +347,15 @@ void SkipList::GetObjectFromString(const std::string& str, std::string* key, std
 }
 
 // 获取表中节点的数量
-int SkipList::Length() {
+template<typename K, typename V>
+int SkipList<K, V>::Length() {
 	return length_;
 }
 
 /* 返回插入跳表的层数 */
 // 此处与Redis跳表稍有不同，最底层的双向链表为level0
-int SkipList::GetRandomLevel() {
+template<typename K, typename V>
+int SkipList<K, V>::GetRandomLevel() {
 	int level = 1;
 	while((random() & 0xFFFF) < (SKIPLIST_P * 0xFFFF))
 		level += 1;
