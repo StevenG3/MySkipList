@@ -1,2 +1,27 @@
-.vscode/
-bin/
+# Compiled Object files
+*.o
+
+# Executables
+*.exe
+*.out
+*.app
+
+# IDE
+.vs
+.vscode
+.DS_Store
+
+# generated
+rpc/protorpc/generated
+
+# output
+*.pid
+*.log
+*.db
+
+bin
+
+# cmake
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
