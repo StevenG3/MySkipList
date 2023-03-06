@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unistd.h>
+#include <signal.h>
 #include "skiplist.h"
 #include "timer.h"
 #include "signal.h"
@@ -17,7 +18,7 @@ void SignalHandler(int signal) {
 void AddSignal(int signal) {
   struct sigaction sa;
   memset(&sa, '\0', sizeof(sa));
-  sa.sa_handler = signalHandler;
+  sa.sa_handler = SignalHandler;
   sa.sa_flags |= SA_RESTART;
   sigfillset(&sa.sa_mask);
   assert(sigaction(signal, &sa, nullptr) != -1);
