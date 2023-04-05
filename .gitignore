@@ -13,7 +13,7 @@
 
 # generated
 rpc/protorpc/generated
-3rdparty/protobuf/generated
+3rdparty/protorpc/generated
 
 # output
 *.pid
