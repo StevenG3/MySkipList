@@ -1,0 +1,20 @@
+// Redis Zrem 命令用于移除有序集中的一个或多个成员，不存在的成员将被忽略。
+// 当 key 存在但不是有序集类型时，返回一个错误。
+// 在 Redis 2.4 版本以前， ZREM 每次只能删除一个元素。
+
+syntax = "proto3";
+
+package protorpc;
+
+message ZremRequest {
+	string key = 1;
+	repeated string members = 2;
+}
+
+message ZremResponse {
+	int32 count = 1;
+}
+
+// service ZremService {
+// 	rpc Zrem(ZremRequest) returns (ZremResponse) {}
+// }

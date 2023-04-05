@@ -29,11 +29,10 @@ public:
 static ProtobufRAII s_protobuf;
 
 protorpc_router router[] = {
-    {"add", calc_add},
-    {"sub", calc_sub},
-    {"mul", calc_mul},
-    {"div", calc_div},
-    {"login", login},
+    {"Zadd", zadd},
+    {"Zrem", zrem},
+    {"Zrank", zrank},
+    {"Zscore", zscore},
 };
 #define PROTORPC_ROUTER_NUM  (sizeof(router)/sizeof(router[0]))
 

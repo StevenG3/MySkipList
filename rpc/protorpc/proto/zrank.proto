@@ -1,0 +1,20 @@
+// Zrank 返回有序集中指定成员的排名。其中有序集成员按分数值递增(从小到大)顺序排列。
+// 排名以 0 为底，也就是说， 分数值最小的成员排名为 0 。
+// 使用 ZREVRANK 命令可以获得成员按分数值递减(从大到小)排列的排名。
+
+syntax = "proto3";
+
+package protorpc;
+
+message ZrankRequest {
+	string key = 1;
+	string member = 2;
+}
+
+message ZrankResponse {
+	int32 rank = 1;
+}
+
+// service ZrankService {
+// 	rpc Zrank(ZrankRequest) returns (ZrankResponse) {}
+// }

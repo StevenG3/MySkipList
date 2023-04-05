@@ -1,0 +1,23 @@
+//  Zscore 命令返回有序集中，成员的分数值。 如果成员元素不是有序集 key 的成员，或 key 不存在，返回 nil 
+//  Zscore 命令的复杂度是 O(log(N)) ， N 为有序集的成员数量。
+
+//  Zscore 命令的返回值和有序集成员的分数值相同。
+// C++ 版本的proto文件
+
+syntax = "proto3";
+
+package protorpc;
+
+message ZscoreRequest {
+	string key = 1;
+	string member = 2;
+}
+
+message ZscoreResponse {
+	string score = 1;
+}
+
+// service ZscoreService {
+// 	rpc Zscore(ZscoreRequest) returns (ZscoreResponse) {}
+// }
+

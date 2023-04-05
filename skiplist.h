@@ -9,6 +9,7 @@
 #include <string>
 #include <mutex>
 #include <algorithm>
+#include <unordered_map>
 
 #define SKIPLIST_P 0.5
 #define SKIPLIST_MAXLEVEL 32
@@ -59,8 +60,8 @@ public:
 	SkipList(int max_level);
 	~SkipList();
 	int InsertElement(K ele, V score);
-	void DeleteElement(K ele, V score);
-	bool SearchElement(K ele, V score);
+	int DeleteElement(K ele);
+	int SearchElement(K ele);
 	void DisplayList();
 	void DumpFile();
 	void LoadFile();
@@ -74,6 +75,9 @@ private:
 	int level_;
 	// 表中允许的最大节点层数
 	int max_level_;
+
+	// 用于存储节点的map
+	std::unordered_map<K, SkipListNode<K, V>*> node_map_;
 
 	// file operator
     std::ofstream file_writer_;
@@ -125,6 +129,19 @@ SkipList<K, V>::~SkipList() {
 template<typename K, typename V>
 int SkipList<K, V>::InsertElement(K ele, V score) {
 	mtx.lock();
+
+	int ans = 1;
+	// 如果某个成员已经是有序集的成员，那么更新这个成员的分数值，并通过重新插入这个成员元素，来保证该成员在正确的位置上
+	if(node_map_.find(ele) != node_map_.end()) {
+		ans = 0;
+		auto it = node_map_.find(ele);
+		if(it->second->score_ == score) {
+			mtx.unlock();
+			return ans;
+		}
+		DeleteElement(ele);
+	}
+
 	// update用于记录待插入位置的前一个节点
 	SkipListNode<K, V>* update[max_level_];
 	memset(update, 0, sizeof(SkipListNode<K, V>*) * max_level_);
@@ -150,11 +167,12 @@ int SkipList<K, V>::InsertElement(K ele, V score) {
 
 		update[cur_level] = curr;
 
-		if(curr->forward_[cur_level] != NULL && curr->forward_[cur_level]->ele_ == ele && curr->forward_[cur_level]->score_ == score) {
-			// std::cout << "key: " << ele << ", score: "<< score << ", exists" << std::endl;
-			mtx.unlock();
-			return 1;
-		}
+		// 因为此前已经做过删除操作，所以此处不需要再做判断
+		// if(curr->forward_[cur_level] != NULL && curr->forward_[cur_level]->ele_ == ele && curr->forward_[cur_level]->score_ == score) {
+		// 	// std::cout << "key: " << ele << ", score: "<< score << ", exists" << std::endl;
+		// 	mtx.unlock();
+		// 	return 0;
+		// }
 	}
 
 	// 新创建节点的最大深度level
@@ -186,14 +204,27 @@ int SkipList<K, V>::InsertElement(K ele, V score) {
 	level_ = std::max(level, level_);
 	++length_;
 
+	node_map_.insert(std::pair<K, SkipListNode<K, V>*>(ele, node));
+
 	// std::cout << "Successfully inserted key: " << ele << ", value:" << score << std::endl;
 	mtx.unlock();
-	return 0;
+	return ans;
 }
 
 template<typename K, typename V>
-void SkipList<K, V>::DeleteElement(K ele, V score) {
+int SkipList<K, V>::DeleteElement(K ele) {
 	mtx.lock();
+
+	if(node_map_.find(ele) == node_map_.end()) {
+		std::cout << "key: " << ele  << " does not exist" << std::endl;
+		mtx.unlock();
+		return 0;
+	}
+
+	auto it = node_map_.find(ele);
+
+	V score = it->second->score_;
+
 	SkipListNode<K, V>* curr = header_, * node;
 	int cur_level = level_, level = max_level_;
 	SkipListNode<K, V>* update[max_level_];
@@ -210,12 +241,13 @@ void SkipList<K, V>::DeleteElement(K ele, V score) {
 			level = cur_level;
 	}
 
+	// 在哈希表中删除，因此在此处不需要再做判断
 	// 将level作为一个标志，此处表示没有找到相应元素
-	if(level == max_level_) {
-		std::cout << "key: " << ele << ", score: "<< score << ", does not exist" << std::endl;
-		mtx.unlock();
-		return;
-	}
+	// if(level == max_level_) {
+	// 	std::cout << "key: " << ele << ", score: "<< score << ", does not exist" << std::endl;
+	// 	mtx.unlock();
+	// 	return;
+	// }
 
 	// TRACE_CMH("node_level: [%d], list_level: [%d]\n", level + 1, level_);
 	// 以下的逻辑表示从0～level层有该元素，需要逐层处理
@@ -234,33 +266,48 @@ void SkipList<K, V>::DeleteElement(K ele, V score) {
 		}
 	}
 
+	node_map_.erase(ele);
+
 	// 释放节点内存
 	delete node;
 
 	--length_;
 
 	mtx.unlock();
+
+	return 1;
 }
+
+// template<typename K, typename V>
+// bool SkipList<K, V>::SearchElement(K ele, V score) { 
+// 	SkipListNode<K, V>* curr = header_, * node;
+// 	int cur_level = level_;
+// 	while(--cur_level >= 0) {
+// 		while(curr->forward_[cur_level] != NULL 
+// 			&& (curr->forward_[cur_level]->score_ < score || score == curr->forward_[cur_level]->score_ && curr->forward_[cur_level]->ele_ < ele))
+// 			curr = curr->forward_[cur_level];
+
+// 		node = curr->forward_[cur_level];
+// 		if(node != NULL && node->ele_ == ele && node->score_ == score) {
+// 			// std::cout << "Found Key: " << ele << ", Value: " << score << std::endl;
+// 			return true;
+// 		}
+// 	}
+
+// 	// std::cout << "NotFound Key: " << ele << ", Value: " << score << std::endl;
+// 	return false;
+// }
 
 template<typename K, typename V>
-bool SkipList<K, V>::SearchElement(K ele, V score) { 
-	SkipListNode<K, V>* curr = header_, * node;
-	int cur_level = level_;
-	while(--cur_level >= 0) {
-		while(curr->forward_[cur_level] != NULL 
-			&& (curr->forward_[cur_level]->score_ < score || score == curr->forward_[cur_level]->score_ && curr->forward_[cur_level]->ele_ < ele))
-			curr = curr->forward_[cur_level];
+int SkipList<K, V>::SearchElement(K ele) {
+	if(node_map_.find(ele) == node_map_.end()) return -1;
 
-		node = curr->forward_[cur_level];
-		if(node != NULL && node->ele_ == ele && node->score_ == score) {
-			// std::cout << "Found Key: " << ele << ", Value: " << score << std::endl;
-			return true;
-		}
-	}
+	auto&& it = node_map_.find(ele);
 
 	// std::cout << "NotFound Key: " << ele << ", Value: " << score << std::endl;
-	return false;
+	return it->second->score_;
 }
+
 
 template<typename K, typename V>
 void SkipList<K, V>::DisplayList() {

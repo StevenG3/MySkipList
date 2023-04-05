@@ -1,44 +1,58 @@
 #ifndef __LRU_H__
 #define __LRU_H__
 
-#include <list>
-#include <utility>
-#include <unordered_map>
+#include <bits/stdc++.h>
 
+using namespace std;
+
+// 此处需要重载hash函数，否则会报错；当前支持的类型有：int, long, long long, string
+// pair 和 tuple 需要自己重载hash函数
+// 泛型编程模板
+// 遗留问题：重载hash函数
 template <typename K, typename V>
 class LRUCache {
 public:
-    LRUCache(int capacity): capacity_(capacity) {}
+	typedef pair<K, V> PII;
+	typedef list<PII>::iterator IT;
+
+    LRUCache(int capacity): capacity(capacity) {}
     
     int get(K key) {
-        auto it = cache_.find(key);
-        if(it == cache_.end()) return -1;
-        lst_.splice(lst_.begin(), lst_, it->second);
-        return it->second->second;
+		if(cache.find(key) == cache.end()) return -1;
+		auto&& [_, it] = *cache.find(key); // C++17
+		lru.splice(lru.begin(), lru, it);
+		return it->second;
     }
     
     void put(K key, V value) {
-        auto it = cache_.find(key);
-        //Already Exists
-        if(it != cache_.end()){
-            it->second->second = value;
-            lst_.splice(lst_.begin(), lst_, it->second);
-            return;
-        }
-        //Not exists
-        lst_.insert(lst_.begin(), std::make_pair(key, value));
-        //Non-sequence container,other iterators won't be influenced by insert/delete
-        cache_[key] = lst_.begin();
-        if(cache_.size() > capacity_){
-            //Delete according to the key
-            cache_.erase(lst_.back().first); // lst_.back() is the element not iterator
-            lst_.pop_back();
-        }
+		if(cache.find(key) != cache.end()) {
+			auto&& [_, it] = *cache.find(key); // C++17
+			it->second = value;
+			lru.splice(lru.begin(), lru, it);
+			return;
+		}
+		if(cache.size() == capacity) {
+			IT it = lru.end();
+			it--;
+			cache.erase(it->first);
+			lru.erase(it);
+		}
+		lru.push_front(PII(key, value));
+		cache.insert(pair(key, lru.begin()));
     }
 private:
-    std::unordered_map<int, std::list<std::pair<K, V>>::iterator> cache_;
-    std::list<std::pair<K, V>> lst_;
-    int capacity_;
+	int capacity;
+
+	// 重载hash函数的方式 C++17
+	// static constexpr auto tri_hash = [fn = hash<int>()](const tuple<int, int, int>& o) -> size_t {
+	// 	auto&& [x, y, z] = o;
+	// 	return (fn(x) << 24) ^ (fn(y) << 8) ^ fn(z);
+	// };
+
+	// unordered_map<tuple<int, int, int>, pair<TreeNode*, int>, decltype(tri_hash)> cache{0, tri_hash};
+
+	unordered_map<K, IT> cache;
+	list<PII> lru;
 };
 
 #endif

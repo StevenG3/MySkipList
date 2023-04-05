@@ -1,6 +1,6 @@
 include Makefile.vars
 
-all: skiplist stress
+all: server client stress
 .PHONY: all
 CC=g++  
 CXXFLAGS=-std=c++0x
@@ -11,8 +11,12 @@ MAKEF=$(MAKE) -f Makefile.in
 prepare:
 	$(MKDIR) bin
 
-skiplist: main.o 
-	$(CC) -o ./bin/main main.o --std=c++11 -pthread 
+server: server.o 
+	$(CC) -o ./bin/server server.o --std=c++11 -pthread 
+	rm -f ./*.o
+
+client: client.o 
+	$(CC) -o ./bin/client client.o --std=c++11 -pthread 
 	rm -f ./*.o
 
 stress: stress_test.o

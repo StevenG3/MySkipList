@@ -24,7 +24,7 @@ void GetElement(long tid, int test_count, int num_threads) {
     int tmp = test_count / num_threads; 
 	for (int i = tid * tmp, count = 0; count < tmp; i++) {
         count++;
-		kSkipList.SearchElement("a", rand() % test_count);
+		kSkipList.SearchElement("a");
 	}
 }
 

@@ -8,13 +8,12 @@ message Error {
 }
 
 message Request {
-    uint64  id      = 1;
-    string  method  = 2;
-    repeated bytes params  = 3;
+    string  key     = 1;
+    repeated bytes params  = 2;
 }
 
 message Response {
-    uint64  id      = 1;
+    string  key     = 1;
     bytes   result  = 2;
     Error   error   = 3;
 }

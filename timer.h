@@ -13,7 +13,7 @@ public:
 
 	~Timer();
 
-	void Push(K key);
+	int Push(K key, int timeout = 10);
 
 	int Pop(K key);
 
@@ -50,19 +50,20 @@ Timer<K, V>::~Timer() {
 }
 
 template <typename K, typename V>
-void Timer<K, V>::Push(K key) {
+int Timer<K, V>::Push(K key, int timeout) {
 	// 此处是否需要入参验证，如何验证
 
-	UtilTimer *temp_ptr = new UtilTimer(key);
+	UtilTimer *temp_ptr = new UtilTimer(key, timeout);
 
 	if(!head_ptr_) {
 		head_ptr_ = tail_ptr_ = temp_ptr;
-		return;
+		return 1;
 	}
 
 	temp_ptr->prev_ptr_ = tail_ptr_;
 	tail_ptr_->next_ptr_ = temp_ptr;
 	tail_ptr_ = temp_ptr;
+	return 1;
 }
 
 template <typename K, typename V>

@@ -1,0 +1,26 @@
+// 生成一个C++的服务端和客户端，其功能是一个RPC调用，服务器收到固定格式的请求，返回固定格式的响应。
+// 服务端：ZADD KEY_NAME SCORE1 VALUE1.. SCOREN VALUEN
+
+// 客户端：被成功的添加到有序集合里的新成员的数量，不包括那些被更新的、已经存在的成员。
+
+syntax = "proto3";
+
+package protorpc;
+
+message ZaddRequestItem {
+	double score = 1;
+	string value = 2;
+}
+
+message ZaddRequest {
+	string key = 1;
+	repeated ZaddRequestItem items = 2;
+}
+
+message ZaddResponse {
+	int32 count = 1;
+}
+
+// service ZaddService {
+// 	rpc Zadd(ZaddRequest) returns (ZaddResponse) {}
+// }
