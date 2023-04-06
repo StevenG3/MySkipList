@@ -4,7 +4,8 @@ rewrite from Skiplist-CPP by Carl
 What are differences between MySkiplist and Skiplist-CPP(author Carl)
 1. add span(SkipListNode::span_)
 2. 添加 LRU 算法以淘汰过期数据
-3. 使用 libhv 跨平台网络库作为 RPC 调用的基座
+3. 使用 libhv 跨平台网络库作为 RPC 调用的基座（尚未完成）
+4. 使用 epoll 网络通信模型实现了远端对键值对的增删改查操作
 
 ## Usage
 ### libhv
