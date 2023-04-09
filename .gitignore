@@ -21,6 +21,7 @@ rpc/protorpc/generated
 *.db
 
 bin
+store
 
 # cmake
 CMakeFiles

@@ -11,9 +11,13 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include "lru.h"
+#include "configs.h"
+
 #define SKIPLIST_P 0.5
 #define SKIPLIST_MAXLEVEL 32
 #define STORE_FILE "store/dump_file"
+#define DEFUALT_MAXLENGTH 0
 
 std::mutex mtx;
 std::string delimiter = ":";
@@ -57,7 +61,7 @@ SkipListNode<K, V>::~SkipListNode() {
 template<typename K, typename V>
 class SkipList {
 public:
-	SkipList(int max_level);
+	SkipList(int max_level, int max_capacity = 0);
 	~SkipList();
 	int InsertElement(K ele, V score);
 	int DeleteElement(K ele);
@@ -65,7 +69,11 @@ public:
 	void DisplayList();
 	void DumpFile();
 	void LoadFile();
+	// Save函数和DumpFile函数的区别在于，Save函数可以在外部指定文件名，而DumpFile函数只能使用默认的文件名
+	void Save(std::ofstream& ofs);
 	int Length();
+	// 通过configs文件设置最大内存
+	int SetMaxMemory();
 private:
 	// 表头节点和表尾节点
 	SkipListNode<K, V>* header_, * tail_;
@@ -75,6 +83,8 @@ private:
 	int level_;
 	// 表中允许的最大节点层数
 	int max_level_;
+	// 表中允许的最大节点数量
+	int max_capacity_;
 
 	// 用于存储节点的map
 	std::unordered_map<K, SkipListNode<K, V>*> node_map_;
@@ -83,16 +93,23 @@ private:
     std::ofstream file_writer_;
     std::ifstream file_reader_;
 
+	// 加入LRU策略，当节点数量超过一定值时，删除最久未使用的节点
+	LRUCache<K, V> lru_cache_;
+
 	bool IsValidString(const std::string& str);
 	void GetObjectFromString(const std::string& str, std::string* key, std::string* value);
 
 	int GetRandomLevel();
+
+	// 没有mutex保护的删除函数，用于在插入时删除旧节点
+	int DeleteElementInLock(K ele);
 };
 
 /* 构造函数 */
 template<typename K, typename V>
-SkipList<K, V>::SkipList(int max_level) {
+SkipList<K, V>::SkipList(int max_level, int max_capacity) {
 	max_level_ = max_level;
+	max_capacity_ = max_capacity;
 	level_ = 0;
 	length_ = 0;
 
@@ -105,6 +122,9 @@ SkipList<K, V>::SkipList(int max_level) {
 		header_->span_[i]    = 0;
 	}
 	tail_ = NULL;
+
+	// 初始化LRU缓存
+	lru_cache_.set_capacity(max_capacity_);
 }
 
 template<typename K, typename V>
@@ -136,10 +156,12 @@ int SkipList<K, V>::InsertElement(K ele, V score) {
 		ans = 0;
 		auto it = node_map_.find(ele);
 		if(it->second->score_ == score) {
+			lru_cache_.get(ele);
 			mtx.unlock();
 			return ans;
 		}
-		DeleteElement(ele);
+		// 同时也删除节点伴随着LRU缓存的删除
+		DeleteElementInLock(ele);
 	}
 
 	// update用于记录待插入位置的前一个节点
@@ -205,10 +227,73 @@ int SkipList<K, V>::InsertElement(K ele, V score) {
 	++length_;
 
 	node_map_.insert(std::pair<K, SkipListNode<K, V>*>(ele, node));
+	lru_cache_.put(ele, score);
+	// 当delete_keys非空时，表示有元素需要删除
+	if(!lru_cache_.delete_keys.empty()) {
+		for(auto it = lru_cache_.delete_keys.begin(); it != lru_cache_.delete_keys.end(); ++it) {
+			DeleteElementInLock(*it);
+		}
+		lru_cache_.delete_keys.clear();
+	}
 
 	// std::cout << "Successfully inserted key: " << ele << ", value:" << score << std::endl;
 	mtx.unlock();
 	return ans;
+}
+
+template<typename K, typename V>
+int SkipList<K, V>::DeleteElementInLock(K ele) {
+	if(node_map_.find(ele) == node_map_.end()) {
+		std::cout << "key: " << ele  << " does not exist" << std::endl;
+		return 0;
+	}
+
+	auto it = node_map_.find(ele);
+
+	V score = it->second->score_;
+
+	SkipListNode<K, V>* curr = header_, * node;
+	int cur_level = level_, level = max_level_;
+	SkipListNode<K, V>* update[max_level_];
+	memset(update, 0, sizeof(SkipListNode<K, V>*) * max_level_);
+	while(--cur_level >= 0) {
+		while(curr->forward_[cur_level] != NULL 
+			&& (curr->forward_[cur_level]->score_ < score || score == curr->forward_[cur_level]->score_ && curr->forward_[cur_level]->ele_ < ele))
+			curr = curr->forward_[cur_level];
+
+		update[cur_level] = curr;
+
+		node = curr->forward_[cur_level];
+		if(node != NULL && node->ele_ == ele && node->score_ == score && level == max_level_)
+			level = cur_level;
+	}
+
+	// TRACE_CMH("node_level: [%d], list_level: [%d]\n", level + 1, level_);
+	// 以下的逻辑表示从0~level层有该元素，需要逐层处理
+	for(int i = 0; i <= level; ++i) {
+		if(node->forward_[i] == NULL) {
+			// node是尾节点
+			update[i]->span_[i] = 0;
+			update[i]->forward_[i] = NULL;
+			if(i == 0) tail_ = update[i];
+		}
+		else {
+			// node不是尾节点
+			update[i]->span_[i] += node->span_[i] - 1;
+			update[i]->forward_[i] = node->forward_[i];
+			if(i == 0) node->forward_[i]->backward_ = update[i];
+		}
+	}
+
+	node_map_.erase(ele);
+	lru_cache_.remove(ele);
+
+	// 释放节点内存
+	delete node;
+
+	--length_;
+
+	return 1;
 }
 
 template<typename K, typename V>
@@ -250,7 +335,7 @@ int SkipList<K, V>::DeleteElement(K ele) {
 	// }
 
 	// TRACE_CMH("node_level: [%d], list_level: [%d]\n", level + 1, level_);
-	// 以下的逻辑表示从0～level层有该元素，需要逐层处理
+	// 以下的逻辑表示从0~level层有该元素，需要逐层处理
 	for(int i = 0; i <= level; ++i) {
 		if(node->forward_[i] == NULL) {
 			// node是尾节点
@@ -267,6 +352,7 @@ int SkipList<K, V>::DeleteElement(K ele) {
 	}
 
 	node_map_.erase(ele);
+	lru_cache_.remove(ele);
 
 	// 释放节点内存
 	delete node;
@@ -303,6 +389,7 @@ int SkipList<K, V>::SearchElement(K ele) {
 	if(node_map_.find(ele) == node_map_.end()) return -1;
 
 	auto&& it = node_map_.find(ele);
+	lru_cache_.get(ele);
 
 	// std::cout << "NotFound Key: " << ele << ", Value: " << score << std::endl;
 	return it->second->score_;
@@ -342,6 +429,21 @@ void SkipList<K, V>::DumpFile() {
 }
 
 template<typename K, typename V>
+void SkipList<K, V>::Save(std::ofstream& ofs) {
+    std::cout << "\n************************* Save *************************" << std::endl;
+    SkipListNode<K, V>* node = header_->forward_[0];
+
+    while (node != NULL) {
+		ofs << node->ele_ << ":" << node->score_ << "\n";
+        std::cout << node->ele_ << ":" << node->score_ << ";\n";
+        node = node->forward_[0];
+    }
+	std::cout << std::endl;
+
+    ofs.flush();
+}
+
+template<typename K, typename V>
 void SkipList<K, V>::LoadFile() {
     file_reader_.open(STORE_FILE);
     std::cout << "\n************************* Load File *************************" << std::endl;
@@ -357,7 +459,7 @@ void SkipList<K, V>::LoadFile() {
 		V value;
 		try {
 			// 泛型编程中需要修改
-			value = std::stod(*val);
+			value = std::stoi(*val);
 		}
 		catch(const std::exception& e) {
 			std::cerr << e.what() << '\n';
@@ -407,6 +509,12 @@ int SkipList<K, V>::GetRandomLevel() {
 	while((random() & 0xFFFF) < (SKIPLIST_P * 0xFFFF))
 		level += 1;
 	return (level < max_level_) ? level : max_level_;
+}
+
+template<typename K, typename V>
+int SkipList<K, V>::SetMaxMemory() {
+	lru_cache_.set_capacity(Configs::GetInstance()->GetMaxMemory());
+	return 0;
 }
 
 #endif

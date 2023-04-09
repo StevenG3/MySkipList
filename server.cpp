@@ -8,7 +8,9 @@
 #include "skiplist.h"
 #include "timer.h"
 #include "signal.h"
+#include "configs.h"
 #define FILE_PATH "./store/dump_file"
+#define FILE_DIR "./store/"
 
 #define MAX_LEVEL 6
 #define	MAX_EVENT_NUMBER 1024
@@ -50,6 +52,13 @@ void AddFd(int epoll_fd, int fd) {
 	setnonblocking(fd);
 }
 
+void UpdateMaxMemory(std::unordered_map<std::string, std::shared_ptr<SkipList<std::string, int>>>& map) {
+	for(auto& it : map) {
+		it.second->SetMaxMemory();
+	}
+	return;
+}
+
 int main(int argc, char* argv[]) {
 	srand((unsigned int)(time(nullptr)));
 
@@ -57,6 +66,10 @@ int main(int argc, char* argv[]) {
 		printf("Usage: %s [port]\n", basename(argv[0]));
 		return 1;
 	}
+
+	// 获取配置信息
+	Configs* configs = Configs::GetInstance();
+
 	int port = atoi(argv[1]);
 
 	int ret = 0;
@@ -113,9 +126,11 @@ int main(int argc, char* argv[]) {
 	std::vector<std::string> timeout_keys;
 	
 	bool stop_server = false;
-
 	bool timeout = false;
+	bool update_config = false;
+
 	TimeoutHandler();
+
 	while(!stop_server) {
 		int number = epoll_wait(epoll_fd, events, MAX_EVENT_NUMBER, -1);
 		if((number < 0) && (errno != EINTR)) {
@@ -175,34 +190,94 @@ int main(int argc, char* argv[]) {
 					buf[ret] = '\0';
 
 					std::string cmd;
-					std::string key;
 					std::vector<std::string> args;
 					std::string arg;
 					std::stringstream ss(buf);
-					ss >> cmd >> key;
+					ss >> cmd;
 					while(ss >> arg) {
 						args.push_back(arg);
 					}
 
 					std::cout << "cmd: " << cmd << std::endl;
-					std::cout << "key: " << key << std::endl;
 					for(auto& arg : args) {
 						std::cout << arg << " ";
 					}
 					std::cout << std::endl;
 
-					if(cmd == "EXIT" || cmd == "exit") {
+					if(cmd == "EXIT" || cmd == "exit" || cmd == "QUIT" || cmd == "quit") {
 						// 此处需要将所有的有序集合保存到文件中
 						stop_server = true;
 						break;
 					}
 
+					if(cmd == "save" || cmd == "SAVE") {
+						// 将所有的有序集合保存到文件中
+						for(auto& it : map) {
+							std::string filename = FILE_DIR + it.first + ".txt";
+							// 使用ofstream打开文件，如果文件不存在，则创建文件
+							std::ofstream ofs(filename);
+							if(!ofs) {
+								std::cout << "open file " << filename << " failed" << std::endl;
+								continue;
+							}
+							it.second->Save(ofs);
+							ofs.close();
+						}
+						write(sockfd, "OK\n", 3);
+						continue;
+					}
+
+					// 处理CONFIG命令
+					// 在Redis中，CONFIG命令可以用于设置服务器的配置参数；但是只实现了ZSET的最大内存的设置
+					// 问题：如何单独设置某个有序集合的最大内存
+					// 此处使用设置跳表的最大节点数来代替
+					if(cmd == "CONFIG" || cmd == "config") {
+						if(args.size() != 3) {
+							// std::cout << "Usage: CONFIG SET maxmemory 1000000" << std::endl;
+							write(sockfd, "Usage: CONFIG SET maxmemory [number]\n", 36);
+							continue;
+						}
+						if(args[0] == "SET" || args[0] == "set") {
+							if(args[1] == "maxmemory" || args[1] == "MAXMEMORY") {
+								// 设置最大内存
+								int max_memory = std::stoi(args[2]);
+								int ret = configs->SetMaxMemory(max_memory);
+								write(sockfd, std::to_string(ret).c_str(), std::to_string(ret).size());
+								write(sockfd, "\n", 1);
+							}
+							update_config = true;
+						}
+						continue;
+					}
+
+					if(cmd == "EXPIRE" || cmd == "expire") {
+						// 设置过期时间
+						if(args.size() != 2) {
+							// std::cout << "Usage: EXPIRE key seconds" << std::endl;
+							write(sockfd, "Usage: EXPIRE key seconds\n", 26);
+							continue;
+						}
+
+						std::string key = args[0];
+						// 将key和超时时间插入到定时器中
+						// std::cout << timer.Push(key, stoi(args[0])) << std::endl;
+						int ret = timer.Push(key, std::stoi(args[1]));
+						write(sockfd, std::to_string(ret).c_str(), std::to_string(ret).size());
+						write(sockfd, "\n", 1);
+						continue;
+					}
+
+					// ZSET相关的命令
+					std::string key = args[0];
+					std::cout << "key: " << key << std::endl;
 					// 使用shared_ptr，防止内存泄漏
 					if(map.find(key) == map.end()) {
-						if(cmd == "ZADD" || cmd == "zadd") map.insert({key, std::make_shared<SkipList<std::string, int>>(MAX_LEVEL)});
+						if(cmd == "ZADD" || cmd == "zadd") {
+							map.insert({key, std::make_shared<SkipList<std::string, int>>(MAX_LEVEL, configs->GetMaxMemory())});
+						}
 						else {
 							// 对于ZREM、ZCARD、EXPIRE返回0，对于ZSCORE、ZRANK返回-1，对于ZDIS返回空字符串
-							if(cmd == "ZREM" || cmd == "zrem" || cmd == "ZCARD" || cmd == "zcard" || cmd == "EXPIRE" || cmd == "expire") {
+							if(cmd == "ZREM" || cmd == "zrem" || cmd == "ZCARD" || cmd == "zcard") {
 								// 发送到客户端
 								write(sockfd, "0\n", 2);
 							}
@@ -220,10 +295,10 @@ int main(int argc, char* argv[]) {
 						}
 					}
 
-					std::shared_ptr<SkipList<std::string, int>> skip_list = map[key];
+					std::shared_ptr<SkipList<std::string, int>>& skip_list = map[key];
 
 					if(cmd == "ZADD" || cmd == "zadd") {
-						if(args.size() != 2) {
+						if(args.size() != 3) {
 							// std::cout << "Usage: ZADD key score member" << std::endl;
 							write(sockfd, "Usage: ZADD key score member\n", 29);
 							continue;
@@ -233,34 +308,36 @@ int main(int argc, char* argv[]) {
 						// 解答：使用\n
 						// 怎么使用\n？使用write(sockfd, "\n", 1);
 						// 会不会在客户端分成两行输出？不会，因为\n是一个字符
-						int ret = skip_list->InsertElement(args[1], stoi(args[0]));
+						std::string member = args[2];
+						int score = std::stoi(args[1]);
+						int ret = skip_list->InsertElement(member, score);
 						write(sockfd, std::to_string(ret).c_str(), std::to_string(ret).size());
 						write(sockfd, "\n", 1);
 					} 
 					else if(cmd == "ZSCORE" || cmd == "zscore") {
-						if(args.size() != 1) {
+						if(args.size() != 2) {
 							// std::cout << "Usage: ZSCORE key member" << std::endl;
 							write(sockfd, "Usage: ZSCORE key member\n", 25);
 							continue;
 						}
 						// std::cout << skip_list->SearchElement(args[0]) << std::endl;
-						int score = skip_list->SearchElement(args[0]);
+						int score = skip_list->SearchElement(args[1]);
 						write(sockfd, std::to_string(score).c_str(), std::to_string(score).size());
 						write(sockfd, "\n", 1);
-					} 
+					}
 					else if(cmd == "ZREM" || cmd == "zrem") {
-						if(args.size() != 1) {
+						if(args.size() != 2) {
 							// std::cout << "Usage: ZREM key member" << std::endl;
 							write(sockfd, "Usage: ZREM key member\n", 23);
 							continue;
 						}
 						// std::cout << skip_list->DeleteElement(args[0]) << std::endl;
-						int ret = skip_list->DeleteElement(args[0]);
+						int ret = skip_list->DeleteElement(args[1]);
 						write(sockfd, std::to_string(ret).c_str(), std::to_string(ret).size());
 						write(sockfd, "\n", 1);
 					}
 					else if(cmd == "ZCARD" || cmd == "zcard") {
-						if(!args.empty()) {
+						if(args.size() != 1) {
 							// std::cout << "Usage: ZCARD key" << std::endl;
 							write(sockfd, "Usage: ZCARD key\n", 17);
 							continue;
@@ -271,7 +348,7 @@ int main(int argc, char* argv[]) {
 						write(sockfd, "\n", 1);
 					} 
 					else if(cmd == "ZDIS" || cmd == "zdis") {
-						if(!args.empty()) {
+						if(args.size() != 1) {
 							// std::cout << "Usage: ZDIS key" << std::endl;
 							write(sockfd, "Usage: ZDIS key\n", 16);
 							continue;
@@ -279,21 +356,9 @@ int main(int argc, char* argv[]) {
 						skip_list->DisplayList();
 						write(sockfd, "1\n", 2);
 					}
-					else if(cmd == "EXPIRE" || cmd == "expire") {
-						if(args.size() != 1) {
-							// std::cout << "Usage: EXPIRE key seconds" << std::endl;
-							write(sockfd, "Usage: EXPIRE key seconds\n", 26);
-							continue;
-						}
-						// 将key和超时时间插入到定时器中
-						// std::cout << timer.Push(key, stoi(args[0])) << std::endl;
-						int ret = timer.Push(key, stoi(args[0]));
-						write(sockfd, std::to_string(ret).c_str(), std::to_string(ret).size());
-						write(sockfd, "\n", 1);
-					}
 					else {
 						// std::cout << "Usage: ZADD(zadd) | ZSCORE(zscore) | ZREM(zrem) | ZCARD(zcard) | ZDIS(zdis) | EXPIRE(expire)" << std::endl;
-						write(sockfd, "Usage: ZADD(zadd) | ZSCORE(zscore) | ZREM(zrem) | ZCARD(zcard) | ZDIS(zdis) | EXPIRE(expire)\n", 80);
+						write(sockfd, "Usage: ZADD(zadd) | ZSCORE(zscore) | ZREM(zrem) | ZCARD(zcard) | ZDIS(zdis) | CONFIG(config) | EXPIRE(expire)\n", 110);
 					}
 				}
 			}
@@ -310,6 +375,13 @@ int main(int argc, char* argv[]) {
 			// 重新设置定时器
 			TimeoutHandler();
 			timeout = false;
+		}
+
+		if(update_config) {
+			// 重新加载配置文件
+			// 对于已经存在的key，直接修改其max_memory
+			UpdateMaxMemory(map);
+			update_config = false;
 		}
 	}
 

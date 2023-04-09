@@ -1,9 +1,9 @@
 include Makefile.vars
 
-all: server client stress
+all: prepare server client stress
 .PHONY: all
 CC=g++  
-CXXFLAGS=-std=c++0x
+CXXFLAGS=-std=c++0x -g
 CFLAGS=-I
 
 MAKEF=$(MAKE) -f Makefile.in
@@ -12,15 +12,15 @@ prepare:
 	$(MKDIR) bin
 
 server: server.o 
-	$(CC) -o ./bin/server server.o --std=c++11 -pthread 
+	$(CC) -o ./bin/server server.o -std=c++11 -pthread -g
 	rm -f ./*.o
 
 client: client.o 
-	$(CC) -o ./bin/client client.o --std=c++11 -pthread 
+	$(CC) -o ./bin/client client.o -std=c++11 -pthread -g
 	rm -f ./*.o
 
 stress: stress_test.o
-	$(CC) -o ./bin/stress stress_test.o --std=c++11 -pthread
+	$(CC) -o ./bin/stress stress_test.o -std=c++11 -pthread -g
 	rm -f ./*.o
 
 protorpc: protorpc_client protorpc_server
