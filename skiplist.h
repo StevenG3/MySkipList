@@ -148,14 +148,16 @@ SkipList<K, V>::~SkipList() {
 
 template<typename K, typename V>
 int SkipList<K, V>::InsertElement(K ele, V score) {
+	// TODO：锁的粒度是否能减小
 	mtx.lock();
 
 	int ans = 1;
 	// 如果某个成员已经是有序集的成员，那么更新这个成员的分数值，并通过重新插入这个成员元素，来保证该成员在正确的位置上
-	if(node_map_.find(ele) != node_map_.end()) {
+	// TODO:
+	auto iter = node_map_.find(ele);
+	if(iter != node_map_.end()) {
 		ans = 0;
-		auto it = node_map_.find(ele);
-		if(it->second->score_ == score) {
+		if(iter->second->score_ == score) {
 			lru_cache_.get(ele);
 			mtx.unlock();
 			return ans;
@@ -212,12 +214,19 @@ int SkipList<K, V>::InsertElement(K ele, V score) {
 	}
 
 	// 最底层为所有依照score大小排列的双向链表：当next为空时，表示该节点为尾节点；当next不为空时，使用backward进行反向连接
-	if(next != NULL) next->backward_ = node;
-	else tail_ = node;
-	if(curr != header_) node->backward_ = curr;
-	else node->backward_ = NULL;
+	if(next != NULL) 
+		next->backward_ = node;
+	else 
+		tail_ = node;
+
+	if(curr != header_) 
+		node->backward_ = curr;
+	else 
+		node->backward_ = NULL;
 
 	// 设置span
+	// TODO: 检查一下是否存在越界问题
+	// TODO：此处添加注释解释span的含义
 	for(int i = 0; i < level; ++i) {
 		update[i]->forward_[i]->span_[i] = update[i]->span_[i] - (rank[0] - rank[i]);
 		update[i]->span_[i] = rank[0] - rank[i] + 1;

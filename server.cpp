@@ -132,7 +132,9 @@ int main(int argc, char* argv[]) {
 	TimeoutHandler();
 
 	while(!stop_server) {
+		// TODO：定时器任务
 		int number = epoll_wait(epoll_fd, events, MAX_EVENT_NUMBER, -1);
+		// 此处需要判断errno是否为EINTR，如果是，则说明是信号中断了epoll_wait
 		if((number < 0) && (errno != EINTR)) {
 			printf("epoll failure\n");
 			break;
