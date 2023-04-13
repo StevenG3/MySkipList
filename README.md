@@ -36,4 +36,6 @@ ZCARD [key]
 ZDIS [key]
 # EXPIRE(expire): 设置键的过期时间
 EXPIRE [key] [seconds]
+# CONFIG(config) SET(set) maxmemory: 设置LRU的最大容量
+CONFIG SET maxmemory [LRU_capacity]
 ```
